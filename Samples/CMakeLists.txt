@@ -1,0 +1,2 @@
+add_subdirectory(MatrixTranspose)
+add_subdirectory(VectorAdd)
