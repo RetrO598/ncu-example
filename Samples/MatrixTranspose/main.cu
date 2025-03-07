@@ -8,6 +8,9 @@
 
 #include <iostream>
 
+// Current Problems：
+// 1. No completely free of bank conflicts
+
 bool checkAnswer(float *matA, float *matB, const int &NX, const int &NY) {
   for (int j = 0; j < NY; ++j) {
     for (int i = 0; i < NX; ++i) {
