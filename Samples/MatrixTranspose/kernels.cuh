@@ -1,5 +1,19 @@
 #pragma once
-#include <curand_mtgp32_kernel.h>
+
+template <int BLOCK_SIZE>
+__global__ void matrixCopyShared(float *matA, const float *matB, const int NX,
+                                 const int NY) {
+  __shared__ float tmp[BLOCK_SIZE][BLOCK_SIZE];
+  int i = blockDim.x * blockIdx.x + threadIdx.x;
+  int j = blockDim.y * blockIdx.y + threadIdx.y;
+  if (i < NX && j < NY) {
+    tmp[threadIdx.y][threadIdx.x] = matB[j * NX + i];
+
+    __syncthreads();
+    matA[j * NX + i] = tmp[threadIdx.y][threadIdx.x];
+  }
+}
+
 __global__ void matrixTransposeNaive(float *matA, const float *matB,
                                      const int NX, const int NY) {
   int i = blockDim.x * blockIdx.x + threadIdx.x;
@@ -10,12 +24,13 @@ __global__ void matrixTransposeNaive(float *matA, const float *matB,
   }
 }
 
-__global__ void matrixTranposeShared(float *matA, const float *matB,
-                                     const int NX, const int NY) {
+template <int BLOCK_SIZE>
+__global__ void matrixTransposeShared(float *matA, const float *matB,
+                                      const int NX, const int NY) {
   int i = blockDim.x * blockIdx.x + threadIdx.x;
   int j = blockDim.y * blockIdx.y + threadIdx.y;
 
-  __shared__ float tmp[32][32];
+  __shared__ float tmp[BLOCK_SIZE][BLOCK_SIZE];
   if (i < NX && j < NY) {
     int x = blockDim.y * blockIdx.y + threadIdx.x;
     int y = blockDim.x * blockIdx.x + threadIdx.y;
@@ -27,12 +42,13 @@ __global__ void matrixTranposeShared(float *matA, const float *matB,
   }
 }
 
-__global__ void matrixTranposeSharedPadding(float *matA, const float *matB,
-                                            const int NX, const int NY) {
+template <int BLOCK_SIZE>
+__global__ void matrixTransposeSharedPadding(float *matA, const float *matB,
+                                             const int NX, const int NY) {
   int i = blockDim.x * blockIdx.x + threadIdx.x;
   int j = blockDim.y * blockIdx.y + threadIdx.y;
 
-  __shared__ float tmp[32][33];
+  __shared__ float tmp[BLOCK_SIZE][BLOCK_SIZE + 1];
   if (i < NX && j < NY) {
     int x = blockDim.y * blockIdx.y + threadIdx.x;
     int y = blockDim.x * blockIdx.x + threadIdx.y;
@@ -44,19 +60,22 @@ __global__ void matrixTranposeSharedPadding(float *matA, const float *matB,
   }
 }
 
-__global__ void matrixTranposeSharedSwizz(float *matA, const float *matB,
-                                          const int NX, const int NY) {
+template <int BLOCK_SIZE>
+__global__ void matrixTransposeSharedSwizz(float *matA, const float *matB,
+                                           const int NX, const int NY) {
   int i = blockDim.x * blockIdx.x + threadIdx.x;
   int j = blockDim.y * blockIdx.y + threadIdx.y;
 
-  __shared__ float tmp[32][33];
+  __shared__ float tmp[BLOCK_SIZE][BLOCK_SIZE];
   if (i < NX && j < NY) {
     int x = blockDim.y * blockIdx.y + threadIdx.x;
     int y = blockDim.x * blockIdx.x + threadIdx.y;
-    tmp[threadIdx.x][(threadIdx.x + threadIdx.y) % 32] = matB[j * NX + i];
+    tmp[threadIdx.x][(threadIdx.x + threadIdx.y) % BLOCK_SIZE] =
+        matB[j * NX + i];
     __syncthreads();
     if (x < NY && y < NX) {
-      matA[y * NY + x] = tmp[threadIdx.y][(threadIdx.x + threadIdx.y) % 2];
+      matA[y * NY + x] =
+          tmp[threadIdx.y][(threadIdx.x + threadIdx.y) % BLOCK_SIZE];
     }
   }
 }

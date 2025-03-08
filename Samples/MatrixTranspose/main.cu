@@ -1,4 +1,5 @@
 #include "kernels.cuh"
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cuda_device_runtime_api.h>
@@ -35,6 +36,7 @@ void printMat(float *mat, const int &NX, const int &NY) {
 int main() {
   const int NX = 1024;
   const int NY = 1024;
+  const int NTIMES = 1;
 
   const int BLOCKSIZE = 32;
   dim3 Grid((NX + BLOCKSIZE - 1) / BLOCKSIZE, (NY + BLOCKSIZE - 1) / BLOCKSIZE,
@@ -66,18 +68,57 @@ int main() {
     }
   }
 
-  matrixTranposeSharedSwizz<<<Grid, Block>>>(matA_d, matB_d, NX, NY);
+  auto kernel = &matrixCopyShared<BLOCKSIZE>;
+  auto mem_size = static_cast<size_t>(sizeof(float) * NX * NY);
+  cudaEvent_t start, end;
+  checkCudaErrors(cudaEventCreate(&start));
+  checkCudaErrors(cudaEventCreate(&end));
 
-  checkCudaErrors(cudaGetLastError());
-  checkCudaErrors(cudaMemcpy(ans_h, matA_d, sizeof(float) * NX * NY,
-                             cudaMemcpyDeviceToHost));
+  for (int i = 0; i < 5; ++i) {
+    if (i == 0) {
+      printf("Testing Kernel matrixCopyShared......\n");
+    } else if (i == 1) {
+      printf("Testing Kernel matrixTransposeNaive......\n");
+      kernel = &matrixTransposeNaive;
+    } else if (i == 2) {
+      printf("Testing Kernel matrixTransposeShared......\n");
+      kernel = &matrixTransposeShared<BLOCKSIZE>;
+    } else if (i == 3) {
+      printf("Testing Kernel matrixTransposeTransposeSharedPadding......\n");
+      kernel = &matrixTransposeSharedPadding<BLOCKSIZE>;
+    } else {
+      printf("Testing Kernel matrixTransposeSharedSwizz......\n");
+      kernel = &matrixTransposeSharedSwizz<BLOCKSIZE>;
+    }
+    // warm up
+    kernel<<<Grid, Block>>>(matA_d, matB_d, NX, NY);
+    checkCudaErrors(cudaGetLastError());
 
-  // printMat(matB_h, NX, NY);
-  // printMat(ans_h, NY, NX);
-  if (checkAnswer(ans_h, matB_h, NX, NY)) {
-    std::cout << "right answer" << "\n";
-  } else {
-    std::cout << "wrong answer" << "\n";
+    // start time measurements
+    checkCudaErrors(cudaEventRecord(start));
+    for (int i = 0; i < NTIMES; ++i) {
+      kernel<<<Grid, Block>>>(matA_d, matB_d, NX, NY);
+      checkCudaErrors(cudaGetLastError());
+    }
+
+    checkCudaErrors(cudaEventRecord(end));
+    checkCudaErrors(cudaEventSynchronize(end));
+
+    float kernelTime;
+    checkCudaErrors(cudaEventElapsedTime(&kernelTime, start, end));
+
+    float kernelBandwidth = 2.0f * 1000.0f * mem_size / (1024 * 1024 * 1024) /
+                            (kernelTime / NTIMES);
+    printf("Effective throughput = %.4f GB/s\n", kernelBandwidth);
+
+    checkCudaErrors(cudaMemcpy(ans_h, matA_d, sizeof(float) * NX * NY,
+                               cudaMemcpyDeviceToHost));
+
+    if (checkAnswer(ans_h, matB_h, NX, NY)) {
+      std::cout << "right answer" << "\n";
+    } else {
+      std::cout << "wrong answer" << "\n";
+    }
   }
 
   checkCudaErrors(cudaFree(matA_d));
