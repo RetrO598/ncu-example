@@ -9,32 +9,7 @@
 
 constexpr int width = 1024;
 constexpr int height = 1000;
-constexpr int filterRadius = 1;
-constexpr int BLOCKSIZE = 16;
 constexpr int NSTEPS = 100;
-
-__constant__ float constFilter[2 * filterRadius + 1][2 * filterRadius + 1];
-
-__global__ void convolutionConst(float *input, float *output, int radius,
-                                 int width, int height) {
-
-  int x = blockDim.x * blockIdx.x + threadIdx.x;
-  int y = blockDim.y * blockIdx.y + threadIdx.y;
-
-  float value = 0.0f;
-  int xinput, yinput;
-  for (int j = 0; j < 2 * radius + 1; ++j) {
-    for (int i = 0; i < 2 * radius + 1; ++i) {
-      xinput = x - radius + i;
-      yinput = y - radius + j;
-      if (xinput >= 0 && xinput < width && yinput >= 0 && yinput < height) {
-        value += input[yinput * width + xinput] * constFilter[j][i];
-      }
-    }
-  }
-
-  output[y * width + x] = value;
-}
 
 __host__ void convolution(float *input, float *filter, float *output) {
   for (int y = 0; y < height; ++y) {
@@ -123,20 +98,17 @@ int main() {
   checkCudaErrors(cudaEventCreate(&start));
   checkCudaErrors(cudaEventCreate(&stop));
 
-  dim3 Grid((width + BLOCKSIZE - 1) / BLOCKSIZE,
-            (height + BLOCKSIZE - 1) / BLOCKSIZE, 1);
+  dim3 Grid((width + OUTPUT_TILE - 1) / OUTPUT_TILE,
+            (height + OUTPUT_TILE - 1) / OUTPUT_TILE, 1);
   dim3 Block(BLOCKSIZE, BLOCKSIZE, 1);
-  convolutionConst<<<Grid, Block>>>(input_d, output_d, filterRadius, width,
-                                    height);
+  convolutionShared<<<Grid, Block>>>(input_d, output_d, width, height);
   checkCudaErrors(cudaGetLastError());
-  convolutionConst<<<Grid, Block>>>(input_d, output_d, filterRadius, width,
-                                    height);
+  convolutionShared<<<Grid, Block>>>(input_d, output_d, width, height);
   checkCudaErrors(cudaGetLastError());
 
   checkCudaErrors(cudaEventRecord(start));
   for (int t = 0; t < NSTEPS; ++t) {
-    convolutionConst<<<Grid, Block>>>(input_d, output_d, filterRadius, width,
-                                      height);
+    convolutionShared<<<Grid, Block>>>(input_d, output_d, width, height);
     checkCudaErrors(cudaGetLastError());
   }
   checkCudaErrors(cudaEventRecord(stop));
