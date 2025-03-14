@@ -8,8 +8,8 @@
 #include <vector_types.h>
 
 constexpr int width = 1024;
-constexpr int height = 1000;
-constexpr int NSTEPS = 100;
+constexpr int height = 1024;
+constexpr int NSTEPS = 10;
 
 __host__ void convolution(float *input, float *filter, float *output) {
   for (int y = 0; y < height; ++y) {
@@ -98,11 +98,83 @@ int main() {
   checkCudaErrors(cudaEventCreate(&start));
   checkCudaErrors(cudaEventCreate(&stop));
 
-  dim3 Grid((width + OUTPUT_TILE - 1) / OUTPUT_TILE,
-            (height + OUTPUT_TILE - 1) / OUTPUT_TILE, 1);
+  dim3 Grid((width + BLOCKSIZE - 1) / BLOCKSIZE,
+            (height + BLOCKSIZE - 1) / BLOCKSIZE, 1);
   dim3 Block(BLOCKSIZE, BLOCKSIZE, 1);
-  convolutionShared<<<Grid, Block>>>(input_d, output_d, width, height);
+
+  // Naive Implementation
+  convolutionNaive<<<Grid, Block>>>(input_d, filter_d, output_d, width, height);
   checkCudaErrors(cudaGetLastError());
+
+  checkCudaErrors(cudaEventRecord(start));
+  for (int t = 0; t < NSTEPS; ++t) {
+    convolutionNaive<<<Grid, Block>>>(input_d, filter_d, output_d, width,
+                                      height);
+    checkCudaErrors(cudaGetLastError());
+  }
+  checkCudaErrors(cudaEventRecord(stop));
+  checkCudaErrors(cudaEventSynchronize(stop));
+
+  float time;
+  checkCudaErrors(cudaEventElapsedTime(&time, start, stop));
+  std::cout << "time for naive kernel：" << time / NSTEPS << "ms\n";
+
+  float *result = new float[memsize];
+  checkCudaErrors(
+      cudaMemcpy(result, output_d, memsize, cudaMemcpyDeviceToHost));
+
+  if (checkAnswer(result, output_h)) {
+    std::cout << "right answer" << "\n";
+  }
+
+  // convolution with const filter matrix
+  convolutionConst<<<Grid, Block>>>(input_d, output_d, width, height);
+  checkCudaErrors(cudaGetLastError());
+
+  checkCudaErrors(cudaEventRecord(start));
+  for (int t = 0; t < NSTEPS; ++t) {
+    convolutionConst<<<Grid, Block>>>(input_d, output_d, width, height);
+    checkCudaErrors(cudaGetLastError());
+  }
+  checkCudaErrors(cudaEventRecord(stop));
+  checkCudaErrors(cudaEventSynchronize(stop));
+
+  checkCudaErrors(cudaEventElapsedTime(&time, start, stop));
+  std::cout << "time for constant filter kernel ：" << time / NSTEPS << "ms\n";
+
+  checkCudaErrors(
+      cudaMemcpy(result, output_d, memsize, cudaMemcpyDeviceToHost));
+
+  if (checkAnswer(result, output_h)) {
+    std::cout << "right answer" << "\n";
+  }
+
+  // Kernel with shared halo
+  Grid = dim3((width + OUTPUT_TILE - 1) / OUTPUT_TILE,
+              (height + OUTPUT_TILE - 1) / OUTPUT_TILE, 1);
+  convolutionSharedHalo<<<Grid, Block>>>(input_d, output_d, width, height);
+  checkCudaErrors(cudaGetLastError());
+
+  checkCudaErrors(cudaEventRecord(start));
+  for (int t = 0; t < NSTEPS; ++t) {
+    convolutionSharedHalo<<<Grid, Block>>>(input_d, output_d, width, height);
+    checkCudaErrors(cudaGetLastError());
+  }
+  checkCudaErrors(cudaEventRecord(stop));
+  checkCudaErrors(cudaEventSynchronize(stop));
+
+  checkCudaErrors(cudaEventElapsedTime(&time, start, stop));
+  std::cout << "time for shared halo kernel ：" << time / NSTEPS << "ms\n";
+
+  checkCudaErrors(
+      cudaMemcpy(result, output_d, memsize, cudaMemcpyDeviceToHost));
+
+  if (checkAnswer(result, output_h)) {
+    std::cout << "right answer" << "\n";
+  }
+
+  // Kernel with shared input (input_tile == output_tile == blocksize), no halo
+
   convolutionShared<<<Grid, Block>>>(input_d, output_d, width, height);
   checkCudaErrors(cudaGetLastError());
 
@@ -114,11 +186,9 @@ int main() {
   checkCudaErrors(cudaEventRecord(stop));
   checkCudaErrors(cudaEventSynchronize(stop));
 
-  float time;
   checkCudaErrors(cudaEventElapsedTime(&time, start, stop));
-  std::cout << "time：" << time / NSTEPS << "ms\n";
+  std::cout << "time for  kernel ：" << time / NSTEPS << "ms\n";
 
-  float *result = new float[memsize];
   checkCudaErrors(
       cudaMemcpy(result, output_d, memsize, cudaMemcpyDeviceToHost));
 

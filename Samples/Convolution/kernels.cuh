@@ -1,7 +1,7 @@
 #pragma once
 
 constexpr int filterRadius = 1;
-constexpr int BLOCKSIZE = 16;
+constexpr int BLOCKSIZE = 32;
 constexpr int INPUT_TILE = BLOCKSIZE;
 constexpr int OUTPUT_TILE = BLOCKSIZE - 2 * filterRadius;
 __constant__ float constFilter[2 * filterRadius + 1][2 * filterRadius + 1];
@@ -48,6 +48,8 @@ __global__ void convolutionConst(float *input, float *output, int width,
   output[y * width + x] = value;
 }
 
+// The size of shared memory equals blocksize, which including output_tile and
+// halo, the grid size should be calculated through output_tile instead of
 __global__ void convolutionSharedHalo(float *input, float *output, int width,
                                       int height) {
   __shared__ float inTile[INPUT_TILE][INPUT_TILE];
@@ -94,12 +96,11 @@ __global__ void convolutionShared(float *input, float *output, int width,
     float value = 0.0f;
     for (int j = 0; j < 2 * filterRadius + 1; ++j) {
       for (int i = 0; i < 2 * filterRadius + 1; ++i) {
-        if (threadIdx.x - filterRadius + i >= 0 &&
-            threadIdx.x - filterRadius + i < BLOCKSIZE &&
-            threadIdx.y - filterRadius + j >= 0 &&
-            threadIdx.y - filterRadius + j < BLOCKSIZE) {
-          value += constFilter[j][i] * inTile[threadIdx.y - filterRadius + j]
-                                             [threadIdx.x - filterRadius + i];
+        int inputx = threadIdx.x - filterRadius + i;
+        int inputy = threadIdx.y - filterRadius + j;
+        if (inputx >= 0 && inputx < BLOCKSIZE && inputy >= 0 &&
+            inputy < BLOCKSIZE) {
+          value += constFilter[j][i] * inTile[inputy][inputx];
         } else if (x - filterRadius + i >= 0 && x - filterRadius + i < width &&
                    y - filterRadius + j >= 0 && y - filterRadius + j < height) {
           value +=
