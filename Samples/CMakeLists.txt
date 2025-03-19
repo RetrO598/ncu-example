@@ -1,3 +1,4 @@
 add_subdirectory(MatrixTranspose)
 add_subdirectory(VectorAdd)
 add_subdirectory(Convolution)
+add_subdirectory(Stencil)
