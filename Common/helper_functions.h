@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdio>
 #define checkCudaErrors(call)                                                  \
   do {                                                                         \
     cudaError_t err = call;                                                    \
