@@ -54,7 +54,7 @@ int main() {
 
   for (int j = 0; j < NY; ++j) {
     for (int i = 0; i < NX; ++i) {
-      matB_h[j * NX + i] = j * NX + i;
+      matB_h[j * NX + i] = j * NX + i + 1;
     }
   }
 
@@ -86,7 +86,7 @@ int main() {
     } else if (i == 3) {
       printf("Testing Kernel matrixTransposeTransposeSharedPadding......\n");
       kernel = &matrixTransposeSharedPadding<BLOCKSIZE>;
-    } else {
+    } else if (i == 4) {
       printf("Testing Kernel matrixTransposeSharedSwizz......\n");
       kernel = &matrixTransposeSharedSwizz<BLOCKSIZE>;
     }

@@ -32,13 +32,13 @@ __global__ void matrixTransposeShared(float *matA, const float *matB,
 
   __shared__ float tmp[BLOCK_SIZE][BLOCK_SIZE];
   if (i < NX && j < NY) {
-    int x = blockDim.y * blockIdx.y + threadIdx.x;
-    int y = blockDim.x * blockIdx.x + threadIdx.y;
     tmp[threadIdx.x][threadIdx.y] = matB[j * NX + i];
-    __syncthreads();
-    if (x < NY && y < NX) {
-      matA[y * NY + x] = tmp[threadIdx.y][threadIdx.x];
-    }
+  }
+  __syncthreads();
+  int x = blockDim.y * blockIdx.y + threadIdx.x;
+  int y = blockDim.x * blockIdx.x + threadIdx.y;
+  if (x < NY && y < NX) {
+    matA[y * NY + x] = tmp[threadIdx.y][threadIdx.x];
   }
 }
 
@@ -50,13 +50,13 @@ __global__ void matrixTransposeSharedPadding(float *matA, const float *matB,
 
   __shared__ float tmp[BLOCK_SIZE][BLOCK_SIZE + 1];
   if (i < NX && j < NY) {
-    int x = blockDim.y * blockIdx.y + threadIdx.x;
-    int y = blockDim.x * blockIdx.x + threadIdx.y;
     tmp[threadIdx.x][threadIdx.y] = matB[j * NX + i];
-    __syncthreads();
-    if (x < NY && y < NX) {
-      matA[y * NY + x] = tmp[threadIdx.y][threadIdx.x];
-    }
+  }
+  int x = blockDim.y * blockIdx.y + threadIdx.x;
+  int y = blockDim.x * blockIdx.x + threadIdx.y;
+  __syncthreads();
+  if (x < NY && y < NX) {
+    matA[y * NY + x] = tmp[threadIdx.y][threadIdx.x];
   }
 }
 
@@ -68,14 +68,14 @@ __global__ void matrixTransposeSharedSwizz(float *matA, const float *matB,
 
   __shared__ float tmp[BLOCK_SIZE][BLOCK_SIZE];
   if (i < NX && j < NY) {
-    int x = blockDim.y * blockIdx.y + threadIdx.x;
-    int y = blockDim.x * blockIdx.x + threadIdx.y;
     tmp[threadIdx.x][(threadIdx.x + threadIdx.y) % BLOCK_SIZE] =
         matB[j * NX + i];
-    __syncthreads();
-    if (x < NY && y < NX) {
-      matA[y * NY + x] =
-          tmp[threadIdx.y][(threadIdx.x + threadIdx.y) % BLOCK_SIZE];
-    }
+  }
+  __syncthreads();
+  int x = blockDim.y * blockIdx.y + threadIdx.x;
+  int y = blockDim.x * blockIdx.x + threadIdx.y;
+  if (x < NY && y < NX) {
+    matA[y * NY + x] =
+        tmp[threadIdx.y][(threadIdx.x + threadIdx.y) % BLOCK_SIZE];
   }
 }
