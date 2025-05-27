@@ -107,7 +107,7 @@ float testPerformance(void (*gpuSgemm)(float *, float *, float *, const int,
 int main() {
   const int M = 1024;
   const int N = 1024;
-  const int K = 1024;
+  const int K = 512;
   constexpr int BLOCK_TILE_M = 128;
   constexpr int BLOCK_TILE_N = 128;
   constexpr int THREAD_TILE_M = 8;
@@ -124,7 +124,7 @@ int main() {
   double total_sec = 0.0;
   for (int i = 0; i < 10; ++i) {
     double this_sec = testPerformance(
-        sgemmShared_v3<BLOCK_TILE_M, BLOCK_TILE_N, THREAD_TILE_M, THREAD_TILE_N,
+        sgemmShared_v4<BLOCK_TILE_M, BLOCK_TILE_N, THREAD_TILE_M, THREAD_TILE_N,
                        SHARED_M, SHARED_K, SHARED_N>,
         gridDim, blockDim, M, N, K, 1);
 
@@ -135,7 +135,7 @@ int main() {
 
   printf("Average time = %f sec, GFLOPS = %f\n", ave_sec, ave_gflops);
   float max_error =
-      testMaxError(sgemmShared_v3<BLOCK_TILE_M, BLOCK_TILE_N, THREAD_TILE_M,
+      testMaxError(sgemmShared_v4<BLOCK_TILE_M, BLOCK_TILE_N, THREAD_TILE_M,
                                   THREAD_TILE_N, SHARED_M, SHARED_K, SHARED_N>,
                    gridDim, blockDim, M, N, K);
   printf("Max Error = %f\n", max_error);

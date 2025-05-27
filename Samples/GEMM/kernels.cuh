@@ -198,7 +198,6 @@ __global__ void sgemmShared_v3(float *__restrict__ A, float *__restrict__ B,
 #pragma unroll
     for (int i = 0; i < SHARED_K; ++i) {
       for (int m = 0; m < THREAD_TILE_M; m += 4) {
-        // r_a[m] = a_shared[ty * THREAD_TILE_M + m][i];
         FLOAT4(r_a[m]) = FLOAT4(a_shared[i][ty * THREAD_TILE_M + m]);
       }
       for (int n = 0; n < THREAD_TILE_N; n += 4) {
@@ -213,6 +212,114 @@ __global__ void sgemmShared_v3(float *__restrict__ A, float *__restrict__ B,
       }
     }
     __syncthreads();
+  }
+
+#pragma unroll
+  for (int m = 0; m < THREAD_TILE_M; ++m) {
+#pragma unroll
+    for (int n = 0; n < THREAD_TILE_N; n += 4) {
+      int store_c_gmem_m = by * BLOCK_TILE_M + ty * THREAD_TILE_M + m;
+      int store_c_gmem_n = bx * BLOCK_TILE_N + tx * THREAD_TILE_N + n;
+      int store_c_gmem_addr = OFFSET(store_c_gmem_m, store_c_gmem_n, N);
+      FLOAT4(C[store_c_gmem_addr]) = FLOAT4(r_c[m][n]);
+    }
+  }
+}
+
+template <int BLOCK_TILE_M, int BLOCK_TILE_N, int THREAD_TILE_M,
+          int THREAD_TILE_N, int SHARED_M, int SHARED_K, int SHARED_N>
+__global__ void sgemmShared_v4(float *__restrict__ A, float *__restrict__ B,
+                               float *__restrict__ C, int M, int N, int K) {
+
+  const int tx = threadIdx.x;
+  const int ty = threadIdx.y;
+  const int bx = blockIdx.x;
+  const int by = blockIdx.y;
+  const int tid = ty * blockDim.x + tx;
+
+  __shared__ float a_shared[2][SHARED_K][SHARED_M];
+  __shared__ float b_shared[2][SHARED_K][SHARED_N];
+
+  float r_c[THREAD_TILE_M][THREAD_TILE_N] = {0.0f};
+  float r_a[THREAD_TILE_M] = {0.0f};
+  float r_b[THREAD_TILE_N] = {0.0f};
+
+  int load_a_smem_m = tid / (SHARED_K / 4);
+  int load_a_smem_k = (tid % (SHARED_K / 4)) * 4;
+  int load_b_smem_k = tid / (SHARED_N / 4);
+  int load_b_smem_n = (tid % (SHARED_N / 4)) * 4;
+
+  int load_a_gmem_m = by * BLOCK_TILE_M + load_a_smem_m;
+  int load_b_gmem_n = bx * BLOCK_TILE_N + load_b_smem_n;
+
+  int load_a_gmem_k = load_a_smem_k;
+  int load_b_gmem_k = load_b_smem_k;
+  int load_a_gmem_addr = OFFSET(load_a_gmem_m, load_a_gmem_k, K);
+  int load_b_gmem_addr = OFFSET(load_b_gmem_k, load_b_gmem_n, N);
+  float trans_a[4] = {0.0f};
+  FLOAT4(trans_a[0]) = FLOAT4(A[load_a_gmem_addr]);
+  for (int i = 0; i < 4; ++i) {
+    a_shared[0][load_a_smem_k + i][load_a_smem_m] = trans_a[i];
+  }
+  FLOAT4(b_shared[0][load_b_smem_k][load_b_smem_n]) =
+      FLOAT4(B[load_b_gmem_addr]);
+
+  __syncthreads();
+  int buffer_index = 1;
+#pragma unroll
+  for (int k = SHARED_K; k < K; k += SHARED_K) {
+    load_a_gmem_k = load_a_smem_k + k;
+    load_b_gmem_k = load_b_smem_k + k;
+
+    load_a_gmem_addr = OFFSET(load_a_gmem_m, load_a_gmem_k, K);
+    load_b_gmem_addr = OFFSET(load_b_gmem_k, load_b_gmem_n, N);
+    FLOAT4(trans_a[0]) = FLOAT4(A[load_a_gmem_addr]);
+    for (int i = 0; i < 4; ++i) {
+      a_shared[buffer_index][load_a_smem_k + i][load_a_smem_m] = trans_a[i];
+    }
+    FLOAT4(b_shared[buffer_index][load_b_smem_k][load_b_smem_n]) =
+        FLOAT4(B[load_b_gmem_addr]);
+
+    buffer_index = buffer_index ^ 1;
+#pragma unroll
+    for (int i = 0; i < SHARED_K; ++i) {
+      for (int m = 0; m < THREAD_TILE_M; m += 4) {
+        FLOAT4(r_a[m]) =
+            FLOAT4(a_shared[buffer_index][i][ty * THREAD_TILE_M + m]);
+      }
+      for (int n = 0; n < THREAD_TILE_N; n += 4) {
+        FLOAT4(r_b[n]) =
+            FLOAT4(b_shared[buffer_index][i][tx * THREAD_TILE_N + n]);
+      }
+#pragma unroll
+      for (int m = 0; m < THREAD_TILE_M; ++m) {
+#pragma unroll
+        for (int n = 0; n < THREAD_TILE_N; ++n) {
+          r_c[m][n] += r_a[m] * r_b[n];
+        }
+      }
+    }
+    __syncthreads();
+  }
+
+  buffer_index = buffer_index ^ 1;
+#pragma unroll
+  for (int i = 0; i < SHARED_K; ++i) {
+    for (int m = 0; m < THREAD_TILE_M; m += 4) {
+      FLOAT4(r_a[m]) =
+          FLOAT4(a_shared[buffer_index][i][ty * THREAD_TILE_M + m]);
+    }
+    for (int n = 0; n < THREAD_TILE_N; n += 4) {
+      FLOAT4(r_b[n]) =
+          FLOAT4(b_shared[buffer_index][i][tx * THREAD_TILE_N + n]);
+    }
+#pragma unroll
+    for (int m = 0; m < THREAD_TILE_M; ++m) {
+#pragma unroll
+      for (int n = 0; n < THREAD_TILE_N; ++n) {
+        r_c[m][n] += r_a[m] * r_b[n];
+      }
+    }
   }
 
 #pragma unroll
